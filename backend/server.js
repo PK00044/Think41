@@ -21,20 +21,44 @@ app.get('/customers', (req, res) => {
 app.get('/customers/:id', async (req, res) => {
     const id = req.params.id;
 
-        
+
     const customer = await db.prepare('SELECT * FROM users WHERE id = ?').get(id);
     
     if (!customer)
         return res.status(404).send('Customer not found');
-    
-    // const cols = db.prepare('PRAGMA table_info(orders)').all().map(c => c.name.tolowerCase());
-
-    // const fk = cols.includes('user_id') ? 'user_id' : 'customer_id';
-
-    // const countRow = await db.prepare(`SELECT COUNT(*) as count FROM orders WHERE ${fk} = ?`).get(id);
 
     const orderCountRow = db.prepare('SELECT COUNT(*) as count FROM orders WHERE user_id = ?').get(id);
     res.json({ ...customer, orderCount:orderCountRow ? orderCountRow.count : 0 });
+});
+
+// Get all orders for a specific customer
+app.get('/customers/:id/orders', (req, res) => {
+    const customerId = req.params.id;
+
+    const customer = db.prepare('SELECT * FROM users WHERE id = ?').get(customerId);
+    if (!customer)
+        return res.status(404).send('Customer not found');
+
+    const orders = db.prepare('SELECT * FROM orders WHERE user_id = ?').all(customerId);
+    res.json({customer_id: customerId, orders: orders});
+});
+
+// Get specific order details
+app.get('/customers/:id/orders/:orderId', (req, res) => {
+    const customerId = req.params.id;
+    const orderId = req.params.orderId;
+
+    const customer = db.prepare('SELECT * FROM users WHERE id = ?').get(customerId);
+    if (!customer)
+        return res.status(404).send('Customer not found');
+
+    
+
+    const order = db.prepare('SELECT * FROM orders WHERE id = ? AND user_id = ?').get(orderId, customerId);
+    if (!order)
+        return res.status(404).send('Order not found');
+
+    res.json({customer_id: customerId, order});
 });
 
 
