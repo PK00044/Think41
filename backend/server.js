@@ -1,67 +1,108 @@
-const express = require('express');
-const Database = require('better-sqlite3');
-const db = new Database('app.db')
+const express = require("express");
+const Database = require("better-sqlite3");
+const db = new Database("app.db");
 const app = express();
 
-
+// Middleware for CORS
 app.use((req, res, next) => {
-    console.log('REQ', req.method, req.url);
-    next();
+  res.setHeader("Access-Control-Allow-Origin", "*");
+  res.setHeader("Access-Control-Allow-Methods", "GET");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+  next();
 });
 
-app.get('/customers', (req, res) => {
-    const page = Math.max(parseInt(req.query.page) || 1, 1);
-    const limit = Math.max(parseInt(req.query.limit) || 10);
+// ✅ Get all customers with full name & orderCount
+app.get("/customers", (req, res) => {
+  try {
+    const customers = db
+      .prepare(`
+        SELECT 
+          u.id, 
+          u.first_name || ' ' || u.last_name AS name, 
+          u.email,
+          COUNT(o.order_id) AS order_count
+        FROM users u
+        LEFT JOIN orders o ON u.id = o.user_id
+        GROUP BY u.id
+      `)
+      .all();
 
-
-    const customers = db.prepare('SELECT * FROM users LIMIT 10').all();
     res.json(customers);
+  } catch (err) {
+    console.error("Error fetching customers:", err.message);
+    res.status(500).json({ error: "Internal server error" });
+  }
 });
 
-app.get('/customers/:id', async (req, res) => {
-    const id = req.params.id;
+// ✅ Get specific customer details including orderCount
+app.get("/customers/:id", (req, res) => {
+  const customerId = req.params.id;
+  try {
+    const customer = db
+      .prepare(`
+        SELECT 
+          u.id, 
+          u.first_name, 
+          u.last_name, 
+          u.email,
+          COUNT(o.order_id) AS orderCount
+        FROM users u
+        LEFT JOIN orders o ON u.id = o.user_id
+        WHERE u.id = ?
+      `)
+      .get(customerId);
 
-
-    const customer = await db.prepare('SELECT * FROM users WHERE id = ?').get(id);
-    
-    if (!customer)
-        return res.status(404).send('Customer not found');
-
-    const orderCountRow = db.prepare('SELECT COUNT(*) as count FROM orders WHERE user_id = ?').get(id);
-    res.json({ ...customer, orderCount:orderCountRow ? orderCountRow.count : 0 });
+    if (!customer) {
+      return res.status(404).json({ error: "Customer not found" });
+    }
+    res.json(customer);
+  } catch (err) {
+    console.error("Error fetching customer:", err.message);
+    res.status(500).json({ error: "Internal server error" });
+  }
 });
 
-// Get all orders for a specific customer
-app.get('/customers/:id/orders', (req, res) => {
-    const customerId = req.params.id;
+// ✅ Get all orders for a specific customer
+app.get("/customers/:id/orders", (req, res) => {
+  const customerId = req.params.id;
+  try {
+    const customer = db.prepare("SELECT * FROM users WHERE id = ?").get(customerId);
+    if (!customer) {
+      return res.status(404).json({ error: "Customer not found" });
+    }
 
-    const customer = db.prepare('SELECT * FROM users WHERE id = ?').get(customerId);
-    if (!customer)
-        return res.status(404).send('Customer not found');
-
-    const orders = db.prepare('SELECT * FROM orders WHERE user_id = ?').all(customerId);
-    res.json({customer_id: customerId, orders: orders});
+    const orders = db.prepare("SELECT * FROM orders WHERE user_id = ?").all(customerId);
+    res.json({ customer_id: customerId, orders });
+  } catch (err) {
+    console.error("Error fetching orders:", err.message);
+    res.status(500).json({ error: "Internal server error" });
+  }
 });
 
-// Get specific order details
-app.get('/customers/:id/orders/:orderId', (req, res) => {
-    const customerId = req.params.id;
-    const orderId = req.params.orderId;
+// ✅ Get specific order details
+app.get("/customers/:id/orders/:orderId", (req, res) => {
+  const customerId = req.params.id;
+  const orderId = req.params.orderId;
+  try {
+    const customer = db.prepare("SELECT * FROM users WHERE id = ?").get(customerId);
+    if (!customer) {
+      return res.status(404).json({ error: "Customer not found" });
+    }
 
-    const customer = db.prepare('SELECT * FROM users WHERE id = ?').get(customerId);
-    if (!customer)
-        return res.status(404).send('Customer not found');
+    const order = db
+      .prepare("SELECT * FROM orders WHERE user_id = ? AND order_id = ?")
+      .get(customerId, orderId);
 
-    
-
-    const order = db.prepare('SELECT * FROM orders WHERE id = ? AND user_id = ?').get(orderId, customerId);
-    if (!order)
-        return res.status(404).send('Order not found');
-
-    res.json({customer_id: customerId, order});
+    if (!order) {
+      return res.status(404).json({ error: "Order not found" });
+    }
+    res.json({ customer_id: customerId, order });
+  } catch (err) {
+    console.error("Error fetching order details:", err.message);
+    res.status(500).json({ error: "Internal server error" });
+  }
 });
 
-
-app.listen(3001, ()=>
-    console.log('Server is running on port 3001')
-);
+// ✅ Start server
+const PORT = 3001;
+app.listen(PORT, () => console.log(`Server running on http://localhost:${PORT}`));
